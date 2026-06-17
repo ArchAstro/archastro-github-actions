@@ -1,5 +1,5 @@
 name: Package Solutions
-description: Run archagent package for selected solution directories.
+description: Run package for selected solution directories with the selected ArchAstro CLI.
 
 inputs:
   solution-roots:
@@ -18,6 +18,10 @@ inputs:
     description: Directory for packaged tarballs. Empty uses $RUNNER_TEMP/archastro-solution-dist.
     required: false
     default: ""
+  owner:
+    description: Owner scope. Use org for archagent or system for archastro.
+    required: false
+    default: org
 
 runs:
   using: composite
@@ -33,8 +37,11 @@ runs:
         SOLUTION: ${{ inputs.solution }}
         SKIP_SAMPLE_SOLUTIONS: ${{ inputs.skip-sample-solutions }}
         OUTPUT_DIR: ${{ inputs.output-dir }}
+        OWNER: ${{ inputs.owner }}
       run: |
         set -euo pipefail
+        source "$GITHUB_ACTION_PATH/../scripts/solution_ci/cli_mode.sh"
+        cli="$(archastro_cli_for_owner "$OWNER")"
         filter_args=(
           --repo-root "$GITHUB_WORKSPACE"
           --solution-roots "$SOLUTION_ROOTS"
@@ -50,6 +57,6 @@ runs:
         mkdir -p "$output_dir"
         while IFS= read -r dir; do
           echo "::group::$dir"
-          archagent package solution "$dir" --output-dir "$output_dir"
+          "$cli" package solution "$dir" --output-dir "$output_dir"
           echo "::endgroup::"
         done < <(python3 "$GITHUB_ACTION_PATH/../scripts/solution_ci/discover_solutions.py" "${filter_args[@]}")

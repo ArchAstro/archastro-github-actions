@@ -104,6 +104,28 @@ def _fake_env(workspace: Path) -> dict[str, str]:
     )
     _write_fake_bin(
         bin_dir,
+        "archastro",
+        textwrap.dedent(
+            """\
+            #!/usr/bin/env python3
+            import json
+            import os
+            import pathlib
+            import sys
+
+            log = pathlib.Path(os.environ["COMMAND_LOG"])
+            log.write_text(log.read_text() + "archastro " + " ".join(sys.argv[1:]) + "\\n")
+
+            if sys.argv[1:3] == ["list", "solutions"]:
+                print(json.dumps([]))
+                sys.exit(0)
+
+            sys.exit(0)
+            """
+        ),
+    )
+    _write_fake_bin(
+        bin_dir,
         "gh",
         textwrap.dedent(
             """\
@@ -136,6 +158,7 @@ def _fake_env(workspace: Path) -> dict[str, str]:
     env["PATH"] = f"{bin_dir}{os.pathsep}{env['PATH']}"
     env["COMMAND_LOG"] = str(log_path)
     env["GH_RELEASE_ROOT"] = str(release_root)
+    env["GITHUB_SHA"] = "local"
     return env
 
 
@@ -172,7 +195,7 @@ class ReleaseSolutionsCommandTest(unittest.TestCase):
 
 
 class DeployReleasedSolutionsCommandTest(unittest.TestCase):
-    def test_dry_run_downloads_release_tarball_and_prints_import_command(self) -> None:
+    def test_dry_run_defaults_to_org_owner_and_archagent(self) -> None:
         workspace = Path(tempfile.mkdtemp())
         repo = workspace / "repo"
         repo.mkdir()
@@ -204,8 +227,48 @@ class DeployReleasedSolutionsCommandTest(unittest.TestCase):
 
         log = (workspace / "commands.log").read_text(encoding="utf-8")
         self.assertIn("gh release download alpha-v0.1.0", log)
-        self.assertIn("archagent list solutions --json", log)
+        self.assertIn("archagent list solutions --json --owner org", log)
         self.assertIn("Would run: archagent import solution", completed.stdout)
+        self.assertTrue((workspace / "downloads" / "alpha-v0.1.0.tar.gz").exists())
+
+    def test_dry_run_can_deploy_system_owner_with_archastro(self) -> None:
+        workspace = Path(tempfile.mkdtemp())
+        repo = workspace / "repo"
+        repo.mkdir()
+        _write_solution(repo, "alpha", "v0.1.0")
+        env = _fake_env(workspace)
+        _write_solution_tarball(workspace / "releases" / "alpha-v0.1.0", "alpha", "v0.1.0")
+
+        completed = subprocess.run(
+            [
+                "python3",
+                str(DEPLOY_RELEASED_SCRIPT),
+                "--repo-root",
+                str(repo),
+                "--solution-roots",
+                "solutions",
+                "--solution",
+                "alpha",
+                "--dry-run",
+                "--download-dir",
+                str(workspace / "downloads"),
+                "--cli",
+                "archastro",
+                "--owner",
+                "system",
+            ],
+            env=env,
+            cwd=repo,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+
+        log = (workspace / "commands.log").read_text(encoding="utf-8")
+        self.assertIn("gh release download alpha-v0.1.0", log)
+        self.assertIn("archastro list solutions --json --owner system", log)
+        self.assertIn("Would run: archastro import solution", completed.stdout)
         self.assertTrue((workspace / "downloads" / "alpha-v0.1.0.tar.gz").exists())
 
 

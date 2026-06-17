@@ -18,6 +18,10 @@ inputs:
     description: Directory for packaged tarballs. Empty uses $RUNNER_TEMP/archastro-solution-dist.
     required: false
     default: ""
+  owner:
+    description: Owner scope. Use org for archagent or system for archastro.
+    required: false
+    default: org
 
 runs:
   using: composite
@@ -35,6 +39,16 @@ runs:
         ARCHAGENT_RELEASE_BASE_URL: https://github.com/ArchAstro/archagents/releases/latest/download
       run: |
         curl -fsSL https://raw.githubusercontent.com/ArchAstro/archagents/main/install.sh | bash
+
+    - name: Install archastro CLI
+      shell: bash
+      env:
+        ARCHASTRO_INSTALL_DIR: ${{ runner.temp }}/bin
+        ARCHASTRO_INSTALL_SKIP_COMPLETIONS: "true"
+        ARCHASTRO_INSTALL_SKIP_PATH_UPDATE: "true"
+        ARCHASTRO_RELEASE_BASE_URL: https://github.com/ArchAstro/archastro/releases/latest/download
+      run: |
+        curl -fsSL https://raw.githubusercontent.com/ArchAstro/archastro/main/install.sh | bash
         echo "${{ runner.temp }}/bin" >> "$GITHUB_PATH"
 
     - name: Validate, lint, and package solutions
@@ -44,8 +58,11 @@ runs:
         SOLUTION: ${{ inputs.solution }}
         SKIP_SAMPLE_SOLUTIONS: ${{ inputs.skip-sample-solutions }}
         OUTPUT_DIR: ${{ inputs.output-dir }}
+        OWNER: ${{ inputs.owner }}
       run: |
         set -euo pipefail
+        source "$GITHUB_ACTION_PATH/scripts/solution_ci/cli_mode.sh"
+        cli="$(archastro_cli_for_owner "$OWNER")"
         filter_args=(
           --repo-root "$GITHUB_WORKSPACE"
           --solution-roots "$SOLUTION_ROOTS"
@@ -61,8 +78,8 @@ runs:
         mkdir -p "$output_dir"
         while IFS= read -r dir; do
           echo "::group::$dir"
-          archagent validate solution "$dir" --schema-only
-          archagent lint solution "$dir" --strict
-          archagent package solution "$dir" --output-dir "$output_dir"
+          "$cli" validate solution "$dir" --schema-only
+          "$cli" lint solution "$dir" --strict
+          "$cli" package solution "$dir" --output-dir "$output_dir"
           echo "::endgroup::"
         done < <(python3 "$GITHUB_ACTION_PATH/scripts/solution_ci/discover_solutions.py" "${filter_args[@]}")

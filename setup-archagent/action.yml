@@ -1,5 +1,5 @@
 name: Setup ArchAgent
-description: Install the archagent CLI from the fixed ArchAstro release URL.
+description: Install the latest ArchAstro CLIs from fixed release URLs.
 
 runs:
   using: composite
@@ -13,4 +13,14 @@ runs:
         ARCHAGENT_RELEASE_BASE_URL: https://github.com/ArchAstro/archagents/releases/latest/download
       run: |
         curl -fsSL https://raw.githubusercontent.com/ArchAstro/archagents/main/install.sh | bash
+
+    - name: Install archastro CLI
+      shell: bash
+      env:
+        ARCHASTRO_INSTALL_DIR: ${{ runner.temp }}/bin
+        ARCHASTRO_INSTALL_SKIP_COMPLETIONS: "true"
+        ARCHASTRO_INSTALL_SKIP_PATH_UPDATE: "true"
+        ARCHASTRO_RELEASE_BASE_URL: https://github.com/ArchAstro/archastro/releases/latest/download
+      run: |
+        curl -fsSL https://raw.githubusercontent.com/ArchAstro/archastro/main/install.sh | bash
         echo "${{ runner.temp }}/bin" >> "$GITHUB_PATH"

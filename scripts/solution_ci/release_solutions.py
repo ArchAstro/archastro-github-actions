@@ -25,6 +25,8 @@ def release_solutions(
     dry_run: bool,
     allow_downgrade: bool,
     archagent: str,
+    deploy_cli: str,
+    deploy_owners: list[str],
 ) -> int:
     solutions = discover_solutions(
         repo_root=repo_root,
@@ -67,7 +69,8 @@ def release_solutions(
                 dry_run=dry_run,
                 allow_downgrade=allow_downgrade,
                 target="",
-                archagent=archagent,
+                cli=deploy_cli,
+                owners=deploy_owners,
             )
         (repo_root / tarball).unlink(missing_ok=True)
     return 0
@@ -82,7 +85,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--deploy-released", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--allow-downgrade", action="store_true")
-    parser.add_argument("--archagent", default="archagent")
+    parser.add_argument("--cli", "--archagent", dest="archagent", default="archagent")
+    parser.add_argument("--deploy-cli", default="archagent")
+    parser.add_argument("--deploy-owner", action="append")
     args = parser.parse_args(argv)
 
     try:
@@ -95,6 +100,8 @@ def main(argv: list[str] | None = None) -> int:
             dry_run=args.dry_run,
             allow_downgrade=args.allow_downgrade,
             archagent=args.archagent,
+            deploy_cli=args.deploy_cli,
+            deploy_owners=args.deploy_owner or ["org"],
         )
     except ValueError as exc:
         print(f"release_solutions: {exc}", file=sys.stderr)

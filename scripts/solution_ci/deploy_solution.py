@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Import or upgrade one local/released ArchAgents Solution with archagent."""
+"""Import or upgrade one local/released ArchAgents Solution."""
 from __future__ import annotations
 
 import argparse
@@ -98,7 +98,8 @@ def deploy_solution(
     dry_run: bool,
     allow_downgrade: bool,
     target: str,
-    archagent: str,
+    cli: str,
+    owners: list[str],
 ) -> int:
     solution_yaml, tarball = solution_yaml_for_input(repo_root, solution_input)
     if not solution_yaml.is_file():
@@ -112,13 +113,16 @@ def deploy_solution(
     if not solution_id and not target_key:
         raise ValueError(f"could not read solution_id or lookup_key from {solution_yaml}")
 
-    list_json = subprocess.check_output([archagent, "list", "solutions", "--json"], cwd=repo_root).decode()
+    list_args = [cli, "list", "solutions", "--json"]
+    for owner in owners:
+        list_args.extend(["--owner", owner])
+    list_json = subprocess.check_output(list_args, cwd=repo_root).decode()
     installed_target = target_from_installed(json.loads(list_json or "[]"), solution_id, target_key)
 
     if installed_target:
         if tarball is None:
             raise ValueError("upgrading from a directory is not supported by this reusable helper; pass a release tarball")
-        args = [archagent, "upgrade", "solution"]
+        args = [cli, "upgrade", "solution"]
         if dry_run:
             args.append("--dry-run")
         if allow_downgrade:
@@ -127,7 +131,7 @@ def deploy_solution(
         subprocess.check_call(args, cwd=repo_root)
         return 0
 
-    import_args = [archagent, "import", "solution", str(tarball or solution_input)]
+    import_args = [cli, "import", "solution", str(tarball or solution_input)]
     if dry_run:
         print(
             f"no installed solution found for solution_id {solution_id or 'unknown'}; "
@@ -145,7 +149,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--allow-downgrade", action="store_true")
     parser.add_argument("--target", default="")
-    parser.add_argument("--archagent", default="archagent")
+    parser.add_argument("--cli", "--archagent", dest="cli", default="archagent")
+    parser.add_argument("--owner", action="append")
     parser.add_argument("solution_input")
     args = parser.parse_args(argv)
 
@@ -156,7 +161,8 @@ def main(argv: list[str] | None = None) -> int:
             dry_run=args.dry_run,
             allow_downgrade=args.allow_downgrade,
             target=args.target,
-            archagent=args.archagent,
+            cli=args.cli,
+            owners=args.owner or ["org"],
         )
     except ValueError as exc:
         print(f"deploy_solution: {exc}", file=sys.stderr)
