@@ -17,6 +17,10 @@ inputs:
   github-token:
     description: GitHub token for gh release commands.
     required: true
+  owner:
+    description: Owner scope. Use org for archagent or system for archastro.
+    required: false
+    default: org
 
 runs:
   using: composite
@@ -32,12 +36,16 @@ runs:
         SOLUTION: ${{ inputs.solution }}
         SKIP_SAMPLE_SOLUTIONS: ${{ inputs.skip-sample-solutions }}
         GH_TOKEN: ${{ inputs.github-token }}
+        OWNER: ${{ inputs.owner }}
       run: |
         set -euo pipefail
+        source "$GITHUB_ACTION_PATH/../scripts/solution_ci/cli_mode.sh"
+        cli="$(archastro_cli_for_owner "$OWNER")"
         args=(
           --repo-root "$GITHUB_WORKSPACE"
           --solution-roots "$SOLUTION_ROOTS"
           --solution "$SOLUTION"
+          --cli "$cli"
         )
         if [[ "$SKIP_SAMPLE_SOLUTIONS" == "true" ]]; then
           args+=(--skip-sample-solutions)

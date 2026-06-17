@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Download current solution release tarballs and deploy them with archagent."""
+"""Download current solution release tarballs and deploy them."""
 from __future__ import annotations
 
 import argparse
@@ -23,7 +23,8 @@ def deploy_released_solutions(
     download_dir: pathlib.Path,
     dry_run: bool,
     allow_downgrade: bool,
-    archagent: str,
+    cli: str,
+    owners: list[str],
 ) -> int:
     solutions = discover_solutions(
         repo_root=repo_root,
@@ -59,7 +60,8 @@ def deploy_released_solutions(
             dry_run=dry_run,
             allow_downgrade=allow_downgrade,
             target="",
-            archagent=archagent,
+            cli=cli,
+            owners=owners,
         )
     return 0
 
@@ -73,7 +75,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--download-dir", default=".released-solutions")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--allow-downgrade", action="store_true")
-    parser.add_argument("--archagent", default="archagent")
+    parser.add_argument("--cli", "--archagent", dest="cli", default="archagent")
+    parser.add_argument("--owner", action="append")
     args = parser.parse_args(argv)
 
     try:
@@ -85,7 +88,8 @@ def main(argv: list[str] | None = None) -> int:
             download_dir=pathlib.Path(args.download_dir),
             dry_run=args.dry_run,
             allow_downgrade=args.allow_downgrade,
-            archagent=args.archagent,
+            cli=args.cli,
+            owners=args.owner or ["org"],
         )
     except ValueError as exc:
         print(f"deploy_released_solutions: {exc}", file=sys.stderr)

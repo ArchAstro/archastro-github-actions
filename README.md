@@ -5,6 +5,9 @@ Reusable GitHub Actions for ArchAstro repositories.
 Actions are split into small, chainable units. Use the atomic actions when
 you want explicit control, or use a macro action for the common path.
 
+Actions that run an ArchAstro CLI accept `owner`, defaulting to `org`. `org`
+uses `archagent`; `system` uses `archastro`.
+
 ## Atomic Solution CI
 
 ```yaml
@@ -24,12 +27,15 @@ jobs:
       - uses: ArchAstro/archastro-github-actions/validate-solutions@v1
         with:
           solution-roots: solutions
+          owner: org
       - uses: ArchAstro/archastro-github-actions/lint-solutions@v1
         with:
           solution-roots: solutions
+          owner: org
       - uses: ArchAstro/archastro-github-actions/package-solutions@v1
         with:
           solution-roots: solutions
+          owner: org
 ```
 
 ## Macro Verify
@@ -40,6 +46,7 @@ The root action is a verify macro alias. This keeps the common PR gate short:
 - uses: ArchAstro/archastro-github-actions@v1
   with:
     solution-roots: solutions
+    owner: org
 ```
 
 The explicit macro path is equivalent:
@@ -48,6 +55,7 @@ The explicit macro path is equivalent:
 - uses: ArchAstro/archastro-github-actions/verify-solutions@v1
   with:
     solution-roots: solutions
+    owner: org
 ```
 
 ## Version Bump Check
@@ -97,14 +105,17 @@ jobs:
       - uses: ArchAstro/archastro-github-actions/release-solutions@v1
         with:
           solution-roots: solutions
+          owner: org
           github-token: ${{ github.token }}
 ```
 
 ## Deploy Solutions
 
 `deploy-solutions` takes the ArchAstro system user token and deploys the
-selected released solution tarballs. Run `setup-archagent` first so the CLI is
-available.
+selected released solution tarballs. Run `setup-archagent` first so the latest
+CLIs are available. Deployment logs in with `<cli> auth systemuser --token`.
+Use `owner: org` for `archagent` org-owned deploys, or `owner: system` for
+`archastro` system-owned deploys.
 
 ```yaml
 name: deploy
@@ -132,6 +143,7 @@ jobs:
         with:
           solution-roots: solutions
           solution: ${{ inputs.solution }}
+          owner: org
           dry-run: ${{ inputs.dry_run }}
           archastro-system-user-token: ${{ secrets.ARCHASTRO_SYSTEM_USER_TOKEN }}
           github-token: ${{ github.token }}
@@ -143,6 +155,7 @@ jobs:
 - uses: ArchAstro/archastro-github-actions/release-and-deploy-solutions@v1
   with:
     solution-roots: solutions
+    owner: org
     archastro-system-user-token: ${{ secrets.ARCHASTRO_SYSTEM_USER_TOKEN }}
     github-token: ${{ github.token }}
 ```
@@ -151,23 +164,19 @@ jobs:
 
 | Action | Purpose |
 | --- | --- |
-| `setup-archagent` | Install the `archagent` CLI. |
-| `configure-archagent` | Configure `archagent` with `archastro-system-user-token`. |
+| `setup-archagent` | Install the latest `archagent` and `archastro` CLIs. |
+| `configure-archagent` | Configure the selected CLI with `<cli> auth systemuser --token`. |
 | `discover-solutions` | Emit selected solution metadata and paths. |
-| `validate-solutions` | Run `archagent validate solution`. |
-| `lint-solutions` | Run `archagent lint solution`. |
-| `package-solutions` | Run `archagent package solution`. |
+| `validate-solutions` | Run `<cli> validate solution`. |
+| `lint-solutions` | Run `<cli> lint solution`. |
+| `package-solutions` | Run `<cli> package solution`. |
 | `check-version-bumps` | Fail PRs where changed solutions did not bump `sample.yaml` version. |
 | `release-solutions` | Create missing GitHub Releases for selected solution versions. |
-| `deploy-solutions` | Deploy selected released solution tarballs with a system user token. |
+| `deploy-solutions` | Deploy selected released solution tarballs with the selected CLI and a system user token. |
 | `verify-solutions` | Macro: setup + validate + lint + package. |
 | `release-and-deploy-solutions` | Macro: setup + release + deploy. |
 
 The actions intentionally accept only `archastro-system-user-token` for
-ArchAstro credentials. Platform URL, app ownership, and import/upgrade
-semantics are owned by the CLI.
-
-For older `archagent` releases that still require app-scoped credentials for
-solution listing, set `ARCHASTRO_SYSTEM_USER_APP_ID` and optionally
-`ARCHASTRO_SYSTEM_USER_APP_NAME` on the action step. The public action input
-remains the system-user token.
+ArchAstro credentials. Any action that accepts that token authenticates with
+`<cli> auth systemuser --token`; platform URL, app ownership, and
+import/upgrade semantics are owned by the CLI.

@@ -22,6 +22,17 @@ ACTION_NAMES = (
     "verify-solutions",
     "release-and-deploy-solutions",
 )
+OWNER_SCOPED_ACTIONS = (
+    ".",
+    "configure-archagent",
+    "validate-solutions",
+    "lint-solutions",
+    "package-solutions",
+    "release-solutions",
+    "deploy-solutions",
+    "verify-solutions",
+    "release-and-deploy-solutions",
+)
 
 
 def _action_path(name: str) -> Path:
@@ -46,6 +57,12 @@ class ActionMetadataTest(unittest.TestCase):
                 self.assertNotIn("command", metadata.get("inputs", {}))
         self.assertIn("Verify Solutions", _metadata(".")["name"])
         self.assertIn("Verify Solutions", _metadata("verify-solutions")["name"])
+
+    def test_owner_scoped_actions_default_to_org(self) -> None:
+        for name in OWNER_SCOPED_ACTIONS:
+            inputs = _metadata(name)["inputs"]
+            with self.subTest(name=name):
+                self.assertEqual(inputs["owner"]["default"], "org")
 
     def test_deploy_action_takes_the_system_user_token(self) -> None:
         metadata = _metadata("deploy-solutions")
@@ -74,26 +91,57 @@ class ActionMetadataTest(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertIn(script, _action_path(name).read_text(encoding="utf-8"))
 
-    def test_setup_action_keeps_archagent_url_fixed(self) -> None:
+    def test_setup_action_installs_latest_archagent_and_archastro(self) -> None:
         text = _action_path("setup-archagent").read_text(encoding="utf-8")
 
         self.assertIn(
             "ARCHAGENT_RELEASE_BASE_URL: https://github.com/ArchAstro/archagents/releases/latest/download",
             text,
         )
+        self.assertIn(
+            "ARCHASTRO_RELEASE_BASE_URL: https://github.com/ArchAstro/archastro/releases/latest/download",
+            text,
+        )
+        self.assertIn("raw.githubusercontent.com/ArchAstro/archagents/main/install.sh", text)
+        self.assertIn("raw.githubusercontent.com/ArchAstro/archastro/main/install.sh", text)
         self.assertNotIn("archagent-release-base-url", text)
+        self.assertNotIn("archastro-release-base-url", text)
+
+        for name in ACTION_NAMES:
+            with self.subTest(name=name):
+                self.assertNotIn("github.com/ArchAstro/archastro-cli/releases/latest/download", _action_path(name).read_text(encoding="utf-8"))
 
     def test_no_action_reintroduces_org_owned_credentials(self) -> None:
         forbidden = (
             "ARCHASTRO_CI_APP_ID",
+            "ARCHASTRO_SYSTEM_USER_APP_ID",
+            "ARCHASTRO_SYSTEM_USER_APP_NAME",
             "ARCHASTRO_PROD_SOLUTIONS_DEPLOY_ORG_ID",
             "ARCHASTRO_PROD_SOLUTIONS_DEPLOY_APP_ID",
+            "set-credentials",
         )
         for name in ACTION_NAMES:
             text = _action_path(name).read_text(encoding="utf-8")
             with self.subTest(name=name):
                 for value in forbidden:
                     self.assertNotIn(value, text)
+
+    def test_system_user_token_uses_systemuser_auth_command(self) -> None:
+        expectations = {
+            "configure-archagent": '"$cli" auth systemuser --token "$ARCHASTRO_SYSTEM_USER_TOKEN"',
+            "deploy-solutions": '"$cli" auth systemuser --token "$ARCHASTRO_SYSTEM_USER_TOKEN"',
+            "release-and-deploy-solutions": '"$cli" auth systemuser --token "$ARCHASTRO_SYSTEM_USER_TOKEN"',
+        }
+        for name, expected in expectations.items():
+            with self.subTest(name=name):
+                self.assertIn(expected, _action_path(name).read_text(encoding="utf-8"))
+
+    def test_owner_scoped_actions_use_shared_cli_selector(self) -> None:
+        for name in OWNER_SCOPED_ACTIONS:
+            text = _action_path(name).read_text(encoding="utf-8")
+            with self.subTest(name=name):
+                self.assertIn("cli_mode.sh", text)
+                self.assertIn('cli="$(archastro_cli_for_owner "$OWNER")"', text)
 
 
 if __name__ == "__main__":

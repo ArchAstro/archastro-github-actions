@@ -1,5 +1,5 @@
 name: Lint Solutions
-description: Run archagent lint for selected solution directories.
+description: Run lint for selected solution directories with the selected ArchAstro CLI.
 
 inputs:
   solution-roots:
@@ -18,6 +18,10 @@ inputs:
     description: Fail on lint warnings.
     required: false
     default: "true"
+  owner:
+    description: Owner scope. Use org for archagent or system for archastro.
+    required: false
+    default: org
 
 runs:
   using: composite
@@ -33,8 +37,11 @@ runs:
         SOLUTION: ${{ inputs.solution }}
         SKIP_SAMPLE_SOLUTIONS: ${{ inputs.skip-sample-solutions }}
         STRICT: ${{ inputs.strict }}
+        OWNER: ${{ inputs.owner }}
       run: |
         set -euo pipefail
+        source "$GITHUB_ACTION_PATH/../scripts/solution_ci/cli_mode.sh"
+        cli="$(archastro_cli_for_owner "$OWNER")"
         filter_args=(
           --repo-root "$GITHUB_WORKSPACE"
           --solution-roots "$SOLUTION_ROOTS"
@@ -49,6 +56,6 @@ runs:
         fi
         while IFS= read -r dir; do
           echo "::group::$dir"
-          archagent lint solution "$dir" "${lint_args[@]}"
+          "$cli" lint solution "$dir" "${lint_args[@]}"
           echo "::endgroup::"
         done < <(python3 "$GITHUB_ACTION_PATH/../scripts/solution_ci/discover_solutions.py" "${filter_args[@]}")

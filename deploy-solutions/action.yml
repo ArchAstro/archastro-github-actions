@@ -20,6 +20,10 @@ inputs:
   github-token:
     description: GitHub token for gh release download commands.
     required: true
+  owner:
+    description: Deployment owner scope. Use org for archagent or system for archastro.
+    required: false
+    default: org
   dry-run:
     description: Preview deployment changes instead of applying them.
     required: false
@@ -40,24 +44,18 @@ runs:
       shell: bash
       run: python3 -m pip install pyyaml==6.0.2
 
-    - name: Configure archagent credentials
+    - name: Configure archastro system user
       shell: bash
       env:
         ARCHASTRO_SYSTEM_USER_TOKEN: ${{ inputs.archastro-system-user-token }}
+        OWNER: ${{ inputs.owner }}
       run: |
         set -euo pipefail
         : "${ARCHASTRO_SYSTEM_USER_TOKEN:?archastro-system-user-token is required}"
         echo "::add-mask::$ARCHASTRO_SYSTEM_USER_TOKEN"
-        args=(--access-token "$ARCHASTRO_SYSTEM_USER_TOKEN")
-        app_id="${ARCHASTRO_SYSTEM_USER_APP_ID:-}"
-        app_name="${ARCHASTRO_SYSTEM_USER_APP_NAME:-}"
-        if [[ -n "$app_id" ]]; then
-          args+=(--app-id "$app_id")
-        fi
-        if [[ -n "$app_name" ]]; then
-          args+=(--app-name "$app_name")
-        fi
-        archagent auth set-credentials "${args[@]}"
+        source "$GITHUB_ACTION_PATH/../scripts/solution_ci/cli_mode.sh"
+        cli="$(archastro_cli_for_owner "$OWNER")"
+        "$cli" auth systemuser --token "$ARCHASTRO_SYSTEM_USER_TOKEN"
 
     - name: Deploy released solutions
       shell: bash
@@ -69,13 +67,18 @@ runs:
         DRY_RUN: ${{ inputs.dry-run }}
         ALLOW_DOWNGRADE: ${{ inputs.allow-downgrade }}
         DOWNLOAD_DIR: ${{ inputs.download-dir }}
+        OWNER: ${{ inputs.owner }}
       run: |
         set -euo pipefail
+        source "$GITHUB_ACTION_PATH/../scripts/solution_ci/cli_mode.sh"
+        cli="$(archastro_cli_for_owner "$OWNER")"
         args=(
           --repo-root "$GITHUB_WORKSPACE"
           --solution-roots "$SOLUTION_ROOTS"
           --solution "$SOLUTION"
           --download-dir "$DOWNLOAD_DIR"
+          --cli "$cli"
+          --owner "$OWNER"
         )
         if [[ "$SKIP_SAMPLE_SOLUTIONS" == "true" ]]; then
           args+=(--skip-sample-solutions)
