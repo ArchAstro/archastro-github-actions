@@ -1,0 +1,172 @@
+name: ArchAstro GitHub Actions
+description: Reusable GitHub Actions for ArchAstro solution repositories.
+
+inputs:
+  command:
+    description: verify, validate-scripts, version-bumps, release, or deploy-released.
+    required: true
+    default: verify
+  solution-roots:
+    description: Comma-separated directories containing solution subdirectories.
+    required: false
+    default: solutions
+  solution:
+    description: all, one solution slug, or comma-separated solution slugs.
+    required: false
+    default: all
+  skip-sample-solutions:
+    description: Skip solution.yaml files whose category_keys include sample.
+    required: false
+    default: "false"
+  base-ref:
+    description: Base ref for version-bump checks. Empty uses origin/${github.base_ref:-main}.
+    required: false
+    default: ""
+  deploy-released:
+    description: After release creation, deploy each newly released tarball.
+    required: false
+    default: "false"
+  dry-run:
+    description: Preview deployment changes instead of applying them.
+    required: false
+    default: "true"
+  allow-downgrade:
+    description: Allow solution downgrades during deploy.
+    required: false
+    default: "false"
+  download-dir:
+    description: Directory for downloaded release tarballs.
+    required: false
+    default: .released-solutions
+  archastro-system-user-token:
+    description: System user token for live validation and deploy commands.
+    required: false
+    default: ""
+  github-token:
+    description: GitHub token for gh release commands.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Install Python dependencies
+      shell: bash
+      run: python3 -m pip install pyyaml==6.0.2
+
+    - name: Install archagent CLI
+      if: ${{ inputs.command != 'version-bumps' }}
+      shell: bash
+      env:
+        ARCHAGENT_INSTALL_DIR: ${{ runner.temp }}/bin
+        ARCHAGENT_INSTALL_SKIP_COMPLETIONS: "true"
+        ARCHAGENT_INSTALL_SKIP_PATH_UPDATE: "true"
+        ARCHAGENT_RELEASE_BASE_URL: https://github.com/ArchAstro/archagents/releases/latest/download
+      run: |
+        curl -fsSL https://raw.githubusercontent.com/ArchAstro/archagents/main/install.sh | bash
+        echo "${{ runner.temp }}/bin" >> "$GITHUB_PATH"
+
+    - name: Configure archagent credentials
+      if: ${{ inputs.command == 'validate-scripts' || inputs.command == 'deploy-released' || (inputs.command == 'release' && inputs.deploy-released == 'true') }}
+      shell: bash
+      env:
+        ARCHASTRO_SYSTEM_USER_TOKEN: ${{ inputs.archastro-system-user-token }}
+      run: |
+        set -euo pipefail
+        : "${ARCHASTRO_SYSTEM_USER_TOKEN:?archastro-system-user-token is required for this command}"
+        echo "::add-mask::$ARCHASTRO_SYSTEM_USER_TOKEN"
+        archagent auth set-credentials --access-token "$ARCHASTRO_SYSTEM_USER_TOKEN"
+
+    - name: Run ArchAstro solution command
+      shell: bash
+      env:
+        COMMAND: ${{ inputs.command }}
+        SOLUTION_ROOTS: ${{ inputs.solution-roots }}
+        SOLUTION: ${{ inputs.solution }}
+        SKIP_SAMPLE_SOLUTIONS: ${{ inputs.skip-sample-solutions }}
+        BASE_REF: ${{ inputs.base-ref }}
+        DEPLOY_RELEASED: ${{ inputs.deploy-released }}
+        DRY_RUN: ${{ inputs.dry-run }}
+        ALLOW_DOWNGRADE: ${{ inputs.allow-downgrade }}
+        DOWNLOAD_DIR: ${{ inputs.download-dir }}
+        INPUT_GITHUB_TOKEN: ${{ inputs.github-token }}
+      run: |
+        set -euo pipefail
+
+        filter_args=(
+          --repo-root "$GITHUB_WORKSPACE"
+          --solution-roots "$SOLUTION_ROOTS"
+          --solution "$SOLUTION"
+        )
+        if [[ "$SKIP_SAMPLE_SOLUTIONS" == "true" ]]; then
+          filter_args+=(--skip-sample-solutions)
+        fi
+
+        case "$COMMAND" in
+          verify)
+            mkdir -p "$RUNNER_TEMP/archastro-solution-dist"
+            while IFS= read -r dir; do
+              echo "::group::$dir"
+              archagent validate solution "$dir" --schema-only
+              archagent lint solution "$dir" --strict
+              archagent package solution "$dir" --output-dir "$RUNNER_TEMP/archastro-solution-dist"
+              echo "::endgroup::"
+            done < <(python3 "$GITHUB_ACTION_PATH/scripts/solution_ci/discover_solutions.py" "${filter_args[@]}")
+            ;;
+
+          validate-scripts)
+            while IFS= read -r dir; do
+              echo "::group::$dir"
+              archagent validate solution "$dir" --scripts-only
+              echo "::endgroup::"
+            done < <(python3 "$GITHUB_ACTION_PATH/scripts/solution_ci/discover_solutions.py" "${filter_args[@]}")
+            ;;
+
+          version-bumps)
+            base_ref="$BASE_REF"
+            if [[ -z "$base_ref" ]]; then
+              base_ref="origin/${GITHUB_BASE_REF:-main}"
+            fi
+            python3 "$GITHUB_ACTION_PATH/scripts/solution_ci/check_version_bumps.py" \
+              --repo-root "$GITHUB_WORKSPACE" \
+              --base-ref "$base_ref" \
+              --solution-roots "$SOLUTION_ROOTS" \
+              --solution "$SOLUTION"
+            ;;
+
+          release)
+            if [[ -n "$INPUT_GITHUB_TOKEN" ]]; then
+              export GH_TOKEN="$INPUT_GITHUB_TOKEN"
+            fi
+            args=("${filter_args[@]}")
+            if [[ "$DEPLOY_RELEASED" == "true" ]]; then
+              args+=(--deploy-released)
+            fi
+            if [[ "$DRY_RUN" == "true" ]]; then
+              args+=(--dry-run)
+            fi
+            if [[ "$ALLOW_DOWNGRADE" == "true" ]]; then
+              args+=(--allow-downgrade)
+            fi
+            python3 "$GITHUB_ACTION_PATH/scripts/solution_ci/release_solutions.py" "${args[@]}"
+            ;;
+
+          deploy-released)
+            if [[ -n "$INPUT_GITHUB_TOKEN" ]]; then
+              export GH_TOKEN="$INPUT_GITHUB_TOKEN"
+            fi
+            args=("${filter_args[@]}" --download-dir "$DOWNLOAD_DIR")
+            if [[ "$DRY_RUN" == "true" ]]; then
+              args+=(--dry-run)
+            fi
+            if [[ "$ALLOW_DOWNGRADE" == "true" ]]; then
+              args+=(--allow-downgrade)
+            fi
+            python3 "$GITHUB_ACTION_PATH/scripts/solution_ci/deploy_released_solutions.py" "${args[@]}"
+            ;;
+
+          *)
+            echo "Unknown command: $COMMAND" >&2
+            exit 2
+            ;;
+        esac

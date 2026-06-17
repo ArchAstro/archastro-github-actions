@@ -1,0 +1,24 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+      - name: Run tests
+        run: |
+          uv run scripts/test_action_metadata.py
+          uv run scripts/test_solution_ci_discover.py
+          uv run scripts/test_solution_ci_check_version_bumps.py
+          uv run scripts/test_solution_ci_release_deploy.py
+          python3 -m py_compile scripts/solution_ci/*.py scripts/test_*.py
