@@ -166,3 +166,8 @@ jobs:
 The actions intentionally accept only `archastro-system-user-token` for
 ArchAstro credentials. Platform URL, app ownership, and import/upgrade
 semantics are owned by the CLI.
+
+For older `archagent` releases that still require app-scoped credentials for
+solution listing, set `ARCHASTRO_SYSTEM_USER_APP_ID` and optionally
+`ARCHASTRO_SYSTEM_USER_APP_NAME` on the action step. The public action input
+remains the system-user token.

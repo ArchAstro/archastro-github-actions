@@ -17,4 +17,13 @@ runs:
         set -euo pipefail
         : "${ARCHASTRO_SYSTEM_USER_TOKEN:?archastro-system-user-token is required}"
         echo "::add-mask::$ARCHASTRO_SYSTEM_USER_TOKEN"
-        archagent auth set-credentials --access-token "$ARCHASTRO_SYSTEM_USER_TOKEN"
+        args=(--access-token "$ARCHASTRO_SYSTEM_USER_TOKEN")
+        app_id="${ARCHASTRO_SYSTEM_USER_APP_ID:-}"
+        app_name="${ARCHASTRO_SYSTEM_USER_APP_NAME:-}"
+        if [[ -n "$app_id" ]]; then
+          args+=(--app-id "$app_id")
+        fi
+        if [[ -n "$app_name" ]]; then
+          args+=(--app-name "$app_name")
+        fi
+        archagent auth set-credentials "${args[@]}"
