@@ -2,19 +2,10 @@
 
 Reusable GitHub Actions for ArchAstro repositories.
 
-The root action exposes solution CI/CD through a concise action-style
-reference:
+Actions are split into small, chainable units. Use the atomic actions when
+you want explicit control, or use a macro action for the common path.
 
-```yaml
-- uses: ArchAstro/archastro-github-actions@v1
-  with:
-    command: verify
-    solution-roots: solutions
-```
-
-## Commands
-
-### Verify solutions
+## Atomic Solution CI
 
 ```yaml
 name: verify
@@ -29,13 +20,37 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: ArchAstro/archastro-github-actions@v1
+      - uses: ArchAstro/archastro-github-actions/setup-archagent@v1
+      - uses: ArchAstro/archastro-github-actions/validate-solutions@v1
         with:
-          command: verify
+          solution-roots: solutions
+      - uses: ArchAstro/archastro-github-actions/lint-solutions@v1
+        with:
+          solution-roots: solutions
+      - uses: ArchAstro/archastro-github-actions/package-solutions@v1
+        with:
           solution-roots: solutions
 ```
 
-### Check version bumps
+## Macro Verify
+
+The root action is a verify macro alias. This keeps the common PR gate short:
+
+```yaml
+- uses: ArchAstro/archastro-github-actions@v1
+  with:
+    solution-roots: solutions
+```
+
+The explicit macro path is equivalent:
+
+```yaml
+- uses: ArchAstro/archastro-github-actions/verify-solutions@v1
+  with:
+    solution-roots: solutions
+```
+
+## Version Bump Check
 
 Use `fetch-depth: 0` so the action can diff against the PR base ref.
 
@@ -54,13 +69,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: ArchAstro/archastro-github-actions@v1
+      - uses: ArchAstro/archastro-github-actions/check-version-bumps@v1
         with:
-          command: version-bumps
           solution-roots: solutions
 ```
 
-### Release solutions
+## Release Solutions
 
 ```yaml
 name: release
@@ -79,17 +93,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: ArchAstro/archastro-github-actions@v1
+      - uses: ArchAstro/archastro-github-actions/setup-archagent@v1
+      - uses: ArchAstro/archastro-github-actions/release-solutions@v1
         with:
-          command: release
           solution-roots: solutions
           github-token: ${{ github.token }}
 ```
 
-### Deploy released solutions
+## Deploy Solutions
+
+`deploy-solutions` takes the ArchAstro system user token and deploys the
+selected released solution tarballs. Run `setup-archagent` first so the CLI is
+available.
 
 ```yaml
-name: deploy released
+name: deploy
 
 on:
   workflow_dispatch:
@@ -109,9 +127,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: ArchAstro/archastro-github-actions@v1
+      - uses: ArchAstro/archastro-github-actions/setup-archagent@v1
+      - uses: ArchAstro/archastro-github-actions/deploy-solutions@v1
         with:
-          command: deploy-released
           solution-roots: solutions
           solution: ${{ inputs.solution }}
           dry-run: ${{ inputs.dry_run }}
@@ -119,22 +137,32 @@ jobs:
           github-token: ${{ github.token }}
 ```
 
-## Inputs
+## Release And Deploy Macro
 
-| Input | Default | Purpose |
-| --- | --- | --- |
-| `command` | `verify` | `verify`, `validate-scripts`, `version-bumps`, `release`, or `deploy-released`. |
-| `solution-roots` | `solutions` | Comma-separated directories containing solution subdirectories. |
-| `solution` | `all` | `all`, one slug, or comma-separated slugs. |
-| `skip-sample-solutions` | `false` | Skip `solution.yaml` files whose `category_keys` include `sample`. |
-| `base-ref` | empty | Base ref for version-bump checks. Empty uses `origin/${github.base_ref:-main}`. |
-| `deploy-released` | `false` | With `command: release`, deploy newly released tarballs. |
-| `dry-run` | `true` | Preview deployment changes where the CLI supports dry-run. |
-| `allow-downgrade` | `false` | Pass downgrade allowance to solution upgrades. |
-| `download-dir` | `.released-solutions` | Download location for released tarballs. |
-| `archastro-system-user-token` | empty | Required for `validate-scripts`, `deploy-released`, and `release` with `deploy-released: true`. |
-| `github-token` | empty | Token used by `gh release` commands. Usually `${{ github.token }}`. |
+```yaml
+- uses: ArchAstro/archastro-github-actions/release-and-deploy-solutions@v1
+  with:
+    solution-roots: solutions
+    archastro-system-user-token: ${{ secrets.ARCHASTRO_SYSTEM_USER_TOKEN }}
+    github-token: ${{ github.token }}
+```
 
-The action intentionally accepts only `ARCHASTRO_SYSTEM_USER_TOKEN` for
+## Action Catalog
+
+| Action | Purpose |
+| --- | --- |
+| `setup-archagent` | Install the `archagent` CLI. |
+| `configure-archagent` | Configure `archagent` with `archastro-system-user-token`. |
+| `discover-solutions` | Emit selected solution metadata and paths. |
+| `validate-solutions` | Run `archagent validate solution`. |
+| `lint-solutions` | Run `archagent lint solution`. |
+| `package-solutions` | Run `archagent package solution`. |
+| `check-version-bumps` | Fail PRs where changed solutions did not bump `sample.yaml` version. |
+| `release-solutions` | Create missing GitHub Releases for selected solution versions. |
+| `deploy-solutions` | Deploy selected released solution tarballs with a system user token. |
+| `verify-solutions` | Macro: setup + validate + lint + package. |
+| `release-and-deploy-solutions` | Macro: setup + release + deploy. |
+
+The actions intentionally accept only `archastro-system-user-token` for
 ArchAstro credentials. Platform URL, app ownership, and import/upgrade
 semantics are owned by the CLI.

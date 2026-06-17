@@ -1,0 +1,41 @@
+name: Check Solution Version Bumps
+description: Fail when changed solution directories do not bump sample.yaml version.
+
+inputs:
+  solution-roots:
+    description: Comma-separated directories containing solution subdirectories.
+    required: false
+    default: solutions
+  solution:
+    description: all, one solution slug, or comma-separated solution slugs.
+    required: false
+    default: all
+  base-ref:
+    description: Base ref for version-bump checks. Empty uses origin/${github.base_ref:-main}.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Install Python dependencies
+      shell: bash
+      run: python3 -m pip install pyyaml==6.0.2
+
+    - name: Check version bumps
+      shell: bash
+      env:
+        BASE_REF: ${{ inputs.base-ref }}
+        SOLUTION_ROOTS: ${{ inputs.solution-roots }}
+        SOLUTION: ${{ inputs.solution }}
+      run: |
+        set -euo pipefail
+        base_ref="$BASE_REF"
+        if [[ -z "$base_ref" ]]; then
+          base_ref="origin/${GITHUB_BASE_REF:-main}"
+        fi
+        python3 "$GITHUB_ACTION_PATH/../scripts/solution_ci/check_version_bumps.py" \
+          --repo-root "$GITHUB_WORKSPACE" \
+          --base-ref "$base_ref" \
+          --solution-roots "$SOLUTION_ROOTS" \
+          --solution "$SOLUTION"

@@ -1,5 +1,5 @@
-name: Verify Solutions
-description: Macro alias for verifying selected ArchAgents Solutions.
+name: Package Solutions
+description: Run archagent package for selected solution directories.
 
 inputs:
   solution-roots:
@@ -26,18 +26,7 @@ runs:
       shell: bash
       run: python3 -m pip install pyyaml==6.0.2
 
-    - name: Install archagent CLI
-      shell: bash
-      env:
-        ARCHAGENT_INSTALL_DIR: ${{ runner.temp }}/bin
-        ARCHAGENT_INSTALL_SKIP_COMPLETIONS: "true"
-        ARCHAGENT_INSTALL_SKIP_PATH_UPDATE: "true"
-        ARCHAGENT_RELEASE_BASE_URL: https://github.com/ArchAstro/archagents/releases/latest/download
-      run: |
-        curl -fsSL https://raw.githubusercontent.com/ArchAstro/archagents/main/install.sh | bash
-        echo "${{ runner.temp }}/bin" >> "$GITHUB_PATH"
-
-    - name: Validate, lint, and package solutions
+    - name: Package solutions
       shell: bash
       env:
         SOLUTION_ROOTS: ${{ inputs.solution-roots }}
@@ -61,8 +50,6 @@ runs:
         mkdir -p "$output_dir"
         while IFS= read -r dir; do
           echo "::group::$dir"
-          archagent validate solution "$dir" --schema-only
-          archagent lint solution "$dir" --strict
           archagent package solution "$dir" --output-dir "$output_dir"
           echo "::endgroup::"
-        done < <(python3 "$GITHUB_ACTION_PATH/scripts/solution_ci/discover_solutions.py" "${filter_args[@]}")
+        done < <(python3 "$GITHUB_ACTION_PATH/../scripts/solution_ci/discover_solutions.py" "${filter_args[@]}")

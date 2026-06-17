@@ -1,0 +1,80 @@
+name: Deploy Solutions
+description: Deploy selected released solution tarballs using an ArchAstro system user token.
+
+inputs:
+  solution-roots:
+    description: Comma-separated directories containing solution subdirectories.
+    required: false
+    default: solutions
+  solution:
+    description: all, one solution slug, or comma-separated solution slugs.
+    required: false
+    default: all
+  skip-sample-solutions:
+    description: Skip solution.yaml files whose category_keys include sample.
+    required: false
+    default: "false"
+  archastro-system-user-token:
+    description: ArchAstro system user token.
+    required: true
+  github-token:
+    description: GitHub token for gh release download commands.
+    required: true
+  dry-run:
+    description: Preview deployment changes instead of applying them.
+    required: false
+    default: "true"
+  allow-downgrade:
+    description: Allow solution downgrades during deploy.
+    required: false
+    default: "false"
+  download-dir:
+    description: Directory for downloaded release tarballs.
+    required: false
+    default: .released-solutions
+
+runs:
+  using: composite
+  steps:
+    - name: Install Python dependencies
+      shell: bash
+      run: python3 -m pip install pyyaml==6.0.2
+
+    - name: Configure archagent credentials
+      shell: bash
+      env:
+        ARCHASTRO_SYSTEM_USER_TOKEN: ${{ inputs.archastro-system-user-token }}
+      run: |
+        set -euo pipefail
+        : "${ARCHASTRO_SYSTEM_USER_TOKEN:?archastro-system-user-token is required}"
+        echo "::add-mask::$ARCHASTRO_SYSTEM_USER_TOKEN"
+        archagent auth set-credentials --access-token "$ARCHASTRO_SYSTEM_USER_TOKEN"
+
+    - name: Deploy released solutions
+      shell: bash
+      env:
+        SOLUTION_ROOTS: ${{ inputs.solution-roots }}
+        SOLUTION: ${{ inputs.solution }}
+        SKIP_SAMPLE_SOLUTIONS: ${{ inputs.skip-sample-solutions }}
+        GH_TOKEN: ${{ inputs.github-token }}
+        DRY_RUN: ${{ inputs.dry-run }}
+        ALLOW_DOWNGRADE: ${{ inputs.allow-downgrade }}
+        DOWNLOAD_DIR: ${{ inputs.download-dir }}
+      run: |
+        set -euo pipefail
+        args=(
+          --repo-root "$GITHUB_WORKSPACE"
+          --solution-roots "$SOLUTION_ROOTS"
+          --solution "$SOLUTION"
+          --download-dir "$DOWNLOAD_DIR"
+        )
+        if [[ "$SKIP_SAMPLE_SOLUTIONS" == "true" ]]; then
+          args+=(--skip-sample-solutions)
+        fi
+        if [[ "$DRY_RUN" == "true" ]]; then
+          args+=(--dry-run)
+        fi
+        if [[ "$ALLOW_DOWNGRADE" == "true" ]]; then
+          args+=(--allow-downgrade)
+        fi
+        python3 "$GITHUB_ACTION_PATH/../scripts/solution_ci/deploy_released_solutions.py" "${args[@]}"

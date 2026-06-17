@@ -1,0 +1,59 @@
+name: Discover Solutions
+description: Discover selected ArchAgents Solution directories.
+
+inputs:
+  solution-roots:
+    description: Comma-separated directories containing solution subdirectories.
+    required: false
+    default: solutions
+  solution:
+    description: all, one solution slug, or comma-separated solution slugs.
+    required: false
+    default: all
+  skip-sample-solutions:
+    description: Skip solution.yaml files whose category_keys include sample.
+    required: false
+    default: "false"
+
+outputs:
+  json:
+    description: JSON array of discovered solution metadata.
+    value: ${{ steps.discover.outputs.json }}
+  paths:
+    description: Newline-separated selected solution paths.
+    value: ${{ steps.discover.outputs.paths }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install Python dependencies
+      shell: bash
+      run: python3 -m pip install pyyaml==6.0.2
+
+    - name: Discover solutions
+      id: discover
+      shell: bash
+      env:
+        SOLUTION_ROOTS: ${{ inputs.solution-roots }}
+        SOLUTION: ${{ inputs.solution }}
+        SKIP_SAMPLE_SOLUTIONS: ${{ inputs.skip-sample-solutions }}
+      run: |
+        set -euo pipefail
+        args=(
+          --repo-root "$GITHUB_WORKSPACE"
+          --solution-roots "$SOLUTION_ROOTS"
+          --solution "$SOLUTION"
+        )
+        if [[ "$SKIP_SAMPLE_SOLUTIONS" == "true" ]]; then
+          args+=(--skip-sample-solutions)
+        fi
+        json="$(python3 "$GITHUB_ACTION_PATH/../scripts/solution_ci/discover_solutions.py" "${args[@]}" --json)"
+        paths="$(JSON_PAYLOAD="$json" python3 -c 'import json, os; [print(item["path"]) for item in json.loads(os.environ["JSON_PAYLOAD"])]')"
+        {
+          echo "json<<EOF"
+          echo "$json"
+          echo "EOF"
+          echo "paths<<EOF"
+          echo "$paths"
+          echo "EOF"
+        } >> "$GITHUB_OUTPUT"

@@ -1,0 +1,20 @@
+name: Configure ArchAgent
+description: Configure archagent with an ArchAstro system user token.
+
+inputs:
+  archastro-system-user-token:
+    description: ArchAstro system user token.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Configure archagent credentials
+      shell: bash
+      env:
+        ARCHASTRO_SYSTEM_USER_TOKEN: ${{ inputs.archastro-system-user-token }}
+      run: |
+        set -euo pipefail
+        : "${ARCHASTRO_SYSTEM_USER_TOKEN:?archastro-system-user-token is required}"
+        echo "::add-mask::$ARCHASTRO_SYSTEM_USER_TOKEN"
+        archagent auth set-credentials --access-token "$ARCHASTRO_SYSTEM_USER_TOKEN"

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Static checks for the public composite action API."""
+"""Static checks for the public composite action APIs."""
 from __future__ import annotations
 
 import unittest
@@ -8,37 +8,92 @@ from pathlib import Path
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-ACTION_YML = REPO_ROOT / "action.yml"
+ACTION_NAMES = (
+    ".",
+    "setup-archagent",
+    "configure-archagent",
+    "discover-solutions",
+    "validate-solutions",
+    "lint-solutions",
+    "package-solutions",
+    "check-version-bumps",
+    "release-solutions",
+    "deploy-solutions",
+    "verify-solutions",
+    "release-and-deploy-solutions",
+)
+
+
+def _action_path(name: str) -> Path:
+    return REPO_ROOT / "action.yml" if name == "." else REPO_ROOT / name / "action.yml"
+
+
+def _metadata(name: str) -> dict:
+    return yaml.safe_load(_action_path(name).read_text(encoding="utf-8"))
 
 
 class ActionMetadataTest(unittest.TestCase):
-    def test_root_action_exposes_succinct_solution_ci_api(self) -> None:
-        metadata = yaml.safe_load(ACTION_YML.read_text(encoding="utf-8"))
+    def test_all_public_actions_are_composite_actions(self) -> None:
+        for name in ACTION_NAMES:
+            with self.subTest(name=name):
+                metadata = _metadata(name)
+                self.assertEqual(metadata["runs"]["using"], "composite")
 
-        self.assertEqual(metadata["name"], "ArchAstro GitHub Actions")
-        self.assertEqual(metadata["runs"]["using"], "composite")
-        self.assertIn("command", metadata["inputs"])
-        self.assertIn("solution-roots", metadata["inputs"])
-        self.assertIn("solution", metadata["inputs"])
-        self.assertIn("archastro-system-user-token", metadata["inputs"])
-        self.assertIn("github-token", metadata["inputs"])
+    def test_atomic_actions_have_single_purpose_names(self) -> None:
+        for name in ACTION_NAMES:
+            with self.subTest(name=name):
+                metadata = _metadata(name)
+                self.assertNotIn("command", metadata.get("inputs", {}))
+        self.assertIn("Verify Solutions", _metadata(".")["name"])
+        self.assertIn("Verify Solutions", _metadata("verify-solutions")["name"])
 
-    def test_action_invokes_solution_ci_scripts_from_action_path(self) -> None:
-        text = ACTION_YML.read_text(encoding="utf-8")
+    def test_deploy_action_takes_the_system_user_token(self) -> None:
+        metadata = _metadata("deploy-solutions")
+        inputs = metadata["inputs"]
 
-        self.assertIn("$GITHUB_ACTION_PATH/scripts/solution_ci/discover_solutions.py", text)
-        self.assertIn("$GITHUB_ACTION_PATH/scripts/solution_ci/check_version_bumps.py", text)
-        self.assertIn("$GITHUB_ACTION_PATH/scripts/solution_ci/release_solutions.py", text)
-        self.assertIn("$GITHUB_ACTION_PATH/scripts/solution_ci/deploy_released_solutions.py", text)
-        self.assertIn("ARCHAGENT_RELEASE_BASE_URL: https://github.com/ArchAstro/archagents/releases/latest/download", text)
+        self.assertIn("archastro-system-user-token", inputs)
+        self.assertTrue(inputs["archastro-system-user-token"]["required"])
+        self.assertIn("github-token", inputs)
 
-    def test_action_does_not_reintroduce_org_owned_credentials(self) -> None:
-        text = ACTION_YML.read_text(encoding="utf-8")
+    def test_release_and_deploy_macro_takes_the_system_user_token(self) -> None:
+        metadata = _metadata("release-and-deploy-solutions")
+        inputs = metadata["inputs"]
 
-        self.assertIn("ARCHASTRO_SYSTEM_USER_TOKEN", text)
-        self.assertNotIn("ARCHASTRO_CI_APP_ID", text)
-        self.assertNotIn("ARCHASTRO_PROD_SOLUTIONS_DEPLOY_ORG_ID", text)
-        self.assertNotIn("ARCHASTRO_PROD_SOLUTIONS_DEPLOY_APP_ID", text)
+        self.assertIn("archastro-system-user-token", inputs)
+        self.assertTrue(inputs["archastro-system-user-token"]["required"])
+        self.assertIn("github-token", inputs)
+
+    def test_actions_invoke_shared_scripts_from_action_path(self) -> None:
+        references = {
+            "discover-solutions": "../scripts/solution_ci/discover_solutions.py",
+            "check-version-bumps": "../scripts/solution_ci/check_version_bumps.py",
+            "release-solutions": "../scripts/solution_ci/release_solutions.py",
+            "deploy-solutions": "../scripts/solution_ci/deploy_released_solutions.py",
+        }
+        for name, script in references.items():
+            with self.subTest(name=name):
+                self.assertIn(script, _action_path(name).read_text(encoding="utf-8"))
+
+    def test_setup_action_keeps_archagent_url_fixed(self) -> None:
+        text = _action_path("setup-archagent").read_text(encoding="utf-8")
+
+        self.assertIn(
+            "ARCHAGENT_RELEASE_BASE_URL: https://github.com/ArchAstro/archagents/releases/latest/download",
+            text,
+        )
+        self.assertNotIn("archagent-release-base-url", text)
+
+    def test_no_action_reintroduces_org_owned_credentials(self) -> None:
+        forbidden = (
+            "ARCHASTRO_CI_APP_ID",
+            "ARCHASTRO_PROD_SOLUTIONS_DEPLOY_ORG_ID",
+            "ARCHASTRO_PROD_SOLUTIONS_DEPLOY_APP_ID",
+        )
+        for name in ACTION_NAMES:
+            text = _action_path(name).read_text(encoding="utf-8")
+            with self.subTest(name=name):
+                for value in forbidden:
+                    self.assertNotIn(value, text)
 
 
 if __name__ == "__main__":

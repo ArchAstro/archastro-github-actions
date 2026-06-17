@@ -1,0 +1,57 @@
+name: Validate Solutions
+description: Run archagent validate for selected solution directories.
+
+inputs:
+  solution-roots:
+    description: Comma-separated directories containing solution subdirectories.
+    required: false
+    default: solutions
+  solution:
+    description: all, one solution slug, or comma-separated solution slugs.
+    required: false
+    default: all
+  skip-sample-solutions:
+    description: Skip solution.yaml files whose category_keys include sample.
+    required: false
+    default: "false"
+  mode:
+    description: schema-only, scripts-only, or full.
+    required: false
+    default: schema-only
+
+runs:
+  using: composite
+  steps:
+    - name: Install Python dependencies
+      shell: bash
+      run: python3 -m pip install pyyaml==6.0.2
+
+    - name: Validate solutions
+      shell: bash
+      env:
+        SOLUTION_ROOTS: ${{ inputs.solution-roots }}
+        SOLUTION: ${{ inputs.solution }}
+        SKIP_SAMPLE_SOLUTIONS: ${{ inputs.skip-sample-solutions }}
+        MODE: ${{ inputs.mode }}
+      run: |
+        set -euo pipefail
+        filter_args=(
+          --repo-root "$GITHUB_WORKSPACE"
+          --solution-roots "$SOLUTION_ROOTS"
+          --solution "$SOLUTION"
+        )
+        if [[ "$SKIP_SAMPLE_SOLUTIONS" == "true" ]]; then
+          filter_args+=(--skip-sample-solutions)
+        fi
+        validate_args=()
+        case "$MODE" in
+          schema-only) validate_args+=(--schema-only) ;;
+          scripts-only) validate_args+=(--scripts-only) ;;
+          full) ;;
+          *) echo "Unknown validation mode: $MODE" >&2; exit 2 ;;
+        esac
+        while IFS= read -r dir; do
+          echo "::group::$dir"
+          archagent validate solution "$dir" "${validate_args[@]}"
+          echo "::endgroup::"
+        done < <(python3 "$GITHUB_ACTION_PATH/../scripts/solution_ci/discover_solutions.py" "${filter_args[@]}")

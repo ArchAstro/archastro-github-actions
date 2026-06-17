@@ -1,5 +1,5 @@
 name: Verify Solutions
-description: Macro alias for verifying selected ArchAgents Solutions.
+description: Macro action that installs archagent, validates, lints, and packages selected solutions.
 
 inputs:
   solution-roots:
@@ -65,4 +65,4 @@ runs:
           archagent lint solution "$dir" --strict
           archagent package solution "$dir" --output-dir "$output_dir"
           echo "::endgroup::"
-        done < <(python3 "$GITHUB_ACTION_PATH/scripts/solution_ci/discover_solutions.py" "${filter_args[@]}")
+        done < <(python3 "$GITHUB_ACTION_PATH/../scripts/solution_ci/discover_solutions.py" "${filter_args[@]}")
