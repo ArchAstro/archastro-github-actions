@@ -235,7 +235,10 @@ class DeployReleasedSolutionsCommandTest(unittest.TestCase):
 
         log = (workspace / "commands.log").read_text(encoding="utf-8")
         self.assertIn("gh release download alpha-v0.1.0", log)
-        self.assertIn("archagent describe solutions alpha-solution --json", log)
+        self.assertIn(
+            "archagent describe solutions sol-00000000-0000-0000-0000-000000000001 --json",
+            log,
+        )
         self.assertNotIn("list solutions", log)
         self.assertIn("Would run: archagent import solution", completed.stdout)
         self.assertTrue((workspace / "downloads" / "alpha-v0.1.0.tar.gz").exists())
@@ -276,7 +279,10 @@ class DeployReleasedSolutionsCommandTest(unittest.TestCase):
 
         log = (workspace / "commands.log").read_text(encoding="utf-8")
         self.assertIn("gh release download alpha-v0.1.0", log)
-        self.assertIn("archastro describe solutions alpha-solution --json", log)
+        self.assertIn(
+            "archastro describe solutions sol-00000000-0000-0000-0000-000000000001 --json",
+            log,
+        )
         self.assertNotIn("list solutions", log)
         self.assertIn("Would run: archastro import solution", completed.stdout)
         self.assertTrue((workspace / "downloads" / "alpha-v0.1.0.tar.gz").exists())
@@ -287,9 +293,10 @@ class DeployReleasedSolutionsCommandTest(unittest.TestCase):
         repo.mkdir()
         _write_solution(repo, "alpha", "v0.1.0")
         env = _fake_env(workspace)
-        # The targeted describe lookup reports alpha-solution as installed, so
-        # the helper must upgrade it rather than import a duplicate.
-        env["INSTALLED_SOLUTIONS"] = "alpha-solution"
+        # The targeted describe lookup (keyed by sol-<solution_id>) reports the
+        # Solution as installed, so the helper must upgrade it rather than
+        # import a duplicate.
+        env["INSTALLED_SOLUTIONS"] = "sol-00000000-0000-0000-0000-000000000001"
         _write_solution_tarball(workspace / "releases" / "alpha-v0.1.0", "alpha", "v0.1.0")
 
         subprocess.run(
@@ -318,8 +325,14 @@ class DeployReleasedSolutionsCommandTest(unittest.TestCase):
         )
 
         log = (workspace / "commands.log").read_text(encoding="utf-8")
-        self.assertIn("archastro describe solutions alpha-solution --json", log)
-        self.assertIn("archastro upgrade solution alpha-solution", log)
+        self.assertIn(
+            "archastro describe solutions sol-00000000-0000-0000-0000-000000000001 --json",
+            log,
+        )
+        self.assertIn(
+            "archastro upgrade solution sol-00000000-0000-0000-0000-000000000001",
+            log,
+        )
         self.assertNotIn("import solution", log)
 
 
