@@ -117,16 +117,21 @@ def deploy_solution(
     solution_id = str(metadata.get("solution_id") or "")
     lookup_key = str(metadata.get("lookup_key") or "")
     local_version = str(metadata.get("solution_version") or "")
-    # `describe solutions` resolves an installed Solution by config id
-    # (cfg_…) or lookup_key — not by the bundle's solution_id field — so the
-    # targeted lookup keys off an explicit --target, then the bundle's
-    # lookup_key. Owner scope is enforced server-side by the endpoint's
-    # visibility rules, so `owners` no longer filters the lookup.
-    identifier = target or lookup_key
+    # `describe solutions` resolves an installed Solution by config id (cfg_…)
+    # or lookup_key. The platform derives the installed Solution's lookup_key
+    # from the bundle's solution_id as `sol-<solution_id>` (the bundle's own
+    # declared lookup_key is not what the installed config is keyed by), so the
+    # targeted lookup keys off an explicit --target, then `sol-<solution_id>`,
+    # then the declared lookup_key as a last resort. Using the wrong key makes
+    # `describe` miss an installed Solution and fall through to import, which
+    # the platform refuses once the bundle's version is higher than installed
+    # ("refusing import of higher solution_version; use the upgrade path").
+    # Owner scope is enforced server-side by the endpoint's visibility rules.
+    identifier = target or (f"sol-{solution_id}" if solution_id else lookup_key)
     if not identifier:
         raise ValueError(
-            f"could not read lookup_key from {solution_yaml}; pass --target "
-            f"with the installed Solution id or lookup_key"
+            f"could not read solution_id or lookup_key from {solution_yaml}; "
+            f"pass --target with the installed Solution id or lookup_key"
         )
 
     installed_target = describe_installed_target(cli, identifier, repo_root)
