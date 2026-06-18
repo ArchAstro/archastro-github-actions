@@ -94,9 +94,13 @@ def _fake_env(workspace: Path) -> dict[str, str]:
                 (output_dir / f"{solution_dir.name}-{version}.tar.gz").write_text("fake tarball")
                 sys.exit(0)
 
-            if sys.argv[1:3] == ["list", "solutions"]:
-                print(json.dumps([]))
-                sys.exit(0)
+            if sys.argv[1:3] == ["describe", "solutions"]:
+                identifier = sys.argv[3]
+                installed = os.environ.get("INSTALLED_SOLUTIONS", "").split(",")
+                if identifier in [s for s in installed if s]:
+                    print(json.dumps({"id": "cfg_" + identifier, "lookup_key": identifier, "solution_version": "v0.1.0"}))
+                    sys.exit(0)
+                sys.exit(4)
 
             sys.exit(0)
             """
@@ -116,9 +120,13 @@ def _fake_env(workspace: Path) -> dict[str, str]:
             log = pathlib.Path(os.environ["COMMAND_LOG"])
             log.write_text(log.read_text() + "archastro " + " ".join(sys.argv[1:]) + "\\n")
 
-            if sys.argv[1:3] == ["list", "solutions"]:
-                print(json.dumps([]))
-                sys.exit(0)
+            if sys.argv[1:3] == ["describe", "solutions"]:
+                identifier = sys.argv[3]
+                installed = os.environ.get("INSTALLED_SOLUTIONS", "").split(",")
+                if identifier in [s for s in installed if s]:
+                    print(json.dumps({"id": "cfg_" + identifier, "lookup_key": identifier, "solution_version": "v0.1.0"}))
+                    sys.exit(0)
+                sys.exit(4)
 
             sys.exit(0)
             """
@@ -227,7 +235,8 @@ class DeployReleasedSolutionsCommandTest(unittest.TestCase):
 
         log = (workspace / "commands.log").read_text(encoding="utf-8")
         self.assertIn("gh release download alpha-v0.1.0", log)
-        self.assertIn("archagent list solutions --json --owner org", log)
+        self.assertIn("archagent describe solutions alpha-solution --json", log)
+        self.assertNotIn("list solutions", log)
         self.assertIn("Would run: archagent import solution", completed.stdout)
         self.assertTrue((workspace / "downloads" / "alpha-v0.1.0.tar.gz").exists())
 
@@ -267,9 +276,51 @@ class DeployReleasedSolutionsCommandTest(unittest.TestCase):
 
         log = (workspace / "commands.log").read_text(encoding="utf-8")
         self.assertIn("gh release download alpha-v0.1.0", log)
-        self.assertIn("archastro list solutions --json --owner system", log)
+        self.assertIn("archastro describe solutions alpha-solution --json", log)
+        self.assertNotIn("list solutions", log)
         self.assertIn("Would run: archastro import solution", completed.stdout)
         self.assertTrue((workspace / "downloads" / "alpha-v0.1.0.tar.gz").exists())
+
+    def test_upgrades_when_describe_finds_an_installed_solution(self) -> None:
+        workspace = Path(tempfile.mkdtemp())
+        repo = workspace / "repo"
+        repo.mkdir()
+        _write_solution(repo, "alpha", "v0.1.0")
+        env = _fake_env(workspace)
+        # The targeted describe lookup reports alpha-solution as installed, so
+        # the helper must upgrade it rather than import a duplicate.
+        env["INSTALLED_SOLUTIONS"] = "alpha-solution"
+        _write_solution_tarball(workspace / "releases" / "alpha-v0.1.0", "alpha", "v0.1.0")
+
+        subprocess.run(
+            [
+                "python3",
+                str(DEPLOY_RELEASED_SCRIPT),
+                "--repo-root",
+                str(repo),
+                "--solution-roots",
+                "solutions",
+                "--solution",
+                "alpha",
+                "--download-dir",
+                str(workspace / "downloads"),
+                "--cli",
+                "archastro",
+                "--owner",
+                "system",
+            ],
+            env=env,
+            cwd=repo,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+
+        log = (workspace / "commands.log").read_text(encoding="utf-8")
+        self.assertIn("archastro describe solutions alpha-solution --json", log)
+        self.assertIn("archastro upgrade solution alpha-solution", log)
+        self.assertNotIn("import solution", log)
 
 
 if __name__ == "__main__":
