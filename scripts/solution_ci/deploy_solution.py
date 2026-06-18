@@ -10,7 +10,6 @@ import subprocess
 import sys
 import tarfile
 import tempfile
-from typing import Any
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
@@ -61,34 +60,43 @@ def solution_yaml_for_input(repo_root: pathlib.Path, solution_input: str) -> tup
     raise ValueError(f"solution directory, slug, or .tar.gz not found: {solution_input}")
 
 
-def target_from_installed(
-    payload: Any,
-    solution_id: str,
-    target_override: str,
-) -> str | None:
-    rows: list[dict[str, Any]]
-    if isinstance(payload, dict):
-        for key in ("data", "items", "results", "solutions"):
-            if isinstance(payload.get(key), list):
-                rows = [item for item in payload[key] if isinstance(item, dict)]
-                break
-        else:
-            rows = [payload]
-    elif isinstance(payload, list):
-        rows = [item for item in payload if isinstance(item, dict)]
-    else:
-        rows = []
+# Exit code the CLI's `describe solution` command uses when the Solution
+# isn't installed yet (server 404 / solution_not_found), distinct from the
+# generic failure exit 1. Mirrors SOLUTION_NOT_FOUND_EXIT_CODE in the CLI's
+# resources/solutions.ts so we can tell "not installed" (-> import) apart
+# from a transient error (-> abort).
+SOLUTION_NOT_FOUND_EXIT_CODE = 4
 
-    target_fields = ("lookup_key", "lookupKey", "id", "config_id", "configId")
-    for row in rows:
-        if target_override:
-            matched = any(str(row.get(field, "")) == target_override for field in target_fields)
-        else:
-            matched = str(row.get("solution_id", "")) == solution_id
-        if not matched:
-            continue
-        return next((str(row[field]) for field in target_fields if row.get(field)), None)
-    return None
+
+def describe_installed_target(
+    cli: str,
+    identifier: str,
+    repo_root: pathlib.Path,
+) -> str | None:
+    """Return the installed Solution's lookup_key/id, or None if not installed.
+
+    Uses the targeted `describe solutions <id-or-lookup_key>` lookup instead
+    of parsing the whole `list solutions --json` catalog. The full list
+    truncates once it outgrows the CLI's stdout pipe buffer (~64KB), yielding
+    unparseable JSON; a single-row describe never approaches that ceiling.
+    """
+    proc = subprocess.run(
+        [cli, "describe", "solutions", identifier, "--json"],
+        cwd=repo_root,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    if proc.returncode == SOLUTION_NOT_FOUND_EXIT_CODE:
+        return None
+    if proc.returncode != 0:
+        message = proc.stderr.strip() or proc.stdout.strip()
+        raise ValueError(
+            f"describe solutions {identifier} failed "
+            f"(exit {proc.returncode}): {message}"
+        )
+    summary = json.loads(proc.stdout or "{}")
+    return str(summary.get("lookup_key") or summary.get("id") or identifier)
 
 
 def deploy_solution(
@@ -109,15 +117,19 @@ def deploy_solution(
     solution_id = str(metadata.get("solution_id") or "")
     lookup_key = str(metadata.get("lookup_key") or "")
     local_version = str(metadata.get("solution_version") or "")
-    target_key = target or ("" if solution_id else lookup_key)
-    if not solution_id and not target_key:
-        raise ValueError(f"could not read solution_id or lookup_key from {solution_yaml}")
+    # `describe solutions` resolves an installed Solution by config id
+    # (cfg_…) or lookup_key — not by the bundle's solution_id field — so the
+    # targeted lookup keys off an explicit --target, then the bundle's
+    # lookup_key. Owner scope is enforced server-side by the endpoint's
+    # visibility rules, so `owners` no longer filters the lookup.
+    identifier = target or lookup_key
+    if not identifier:
+        raise ValueError(
+            f"could not read lookup_key from {solution_yaml}; pass --target "
+            f"with the installed Solution id or lookup_key"
+        )
 
-    list_args = [cli, "list", "solutions", "--json"]
-    for owner in owners:
-        list_args.extend(["--owner", owner])
-    list_json = subprocess.check_output(list_args, cwd=repo_root).decode()
-    installed_target = target_from_installed(json.loads(list_json or "[]"), solution_id, target_key)
+    installed_target = describe_installed_target(cli, identifier, repo_root)
 
     if installed_target:
         if tarball is None:
